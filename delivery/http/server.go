@@ -2,7 +2,6 @@ package http
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/xujiajun/gorouter"
@@ -11,6 +10,8 @@ import (
 // NewServer func returns a new instance of the Server structure
 func NewServer(port, version string) *Server {
 	mux := gorouter.New()
+	mux.PanicHandler = panicHandler
+	mux.NotFoundFunc(notFoundHandler)
 	return &Server{router: mux, listenPort: port, apiVersion: version}
 }
 
@@ -30,12 +31,12 @@ type Server struct {
 // ListenAndServe function to handle requests on incoming connections via http
 func (s *Server) ListenAndServe() error {
 	// Application health check endpoint
-	s.router.GET("/health", s.healthCheckHandler)
+	s.router.GET("/health", healthCheckHandler)
 
 	// Middlewares
 	// TODO: there are middlewares for test. This part should be rewritten
-	s.router.NotFoundFunc(notFoundFunc)
-	s.router.Use(withLogging, withTracing, withStatusRecord)
+	// s.router.NotFoundFunc(notFoundFunc)
+	// s.router.Use(withLogging, withTracing, withStatusRecord)
 
 	// Set up API routes with prefix
 	api := s.router.Group(s.apiVersion)
@@ -56,44 +57,17 @@ func (s *Server) ListenAndServe() error {
 }
 
 // Health check endpoint
-func (s *Server) healthCheckHandler(w http.ResponseWriter, r *http.Request) {
+func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("OK"))
 }
 
-type statusRecorder struct {
-	http.ResponseWriter
-	status int
+func panicHandler(w http.ResponseWriter, req *http.Request, err interface{}) {
+	w.WriteHeader(http.StatusInternalServerError)
+	fmt.Println("err from recover is :", err)
+	fmt.Fprint(w, "received a panic")
 }
 
-func (rec *statusRecorder) WriteHeader(code int) {
-	rec.status = code
-	rec.ResponseWriter.WriteHeader(code)
-}
-
-//https://upgear.io/blog/golang-tip-wrapping-http-response-writer-for-middleware/
-func withStatusRecord(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		rec := statusRecorder{w, http.StatusOK}
-		next.ServeHTTP(&rec, r)
-		log.Printf("response status: %v\n", rec.status)
-	}
-}
-
-func notFoundFunc(w http.ResponseWriter, r *http.Request) {
+func notFoundHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotFound)
-	fmt.Fprint(w, "Not found page !")
-}
-
-func withLogging(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("Logged connection from %s", r.RemoteAddr)
-		next.ServeHTTP(w, r)
-	}
-}
-
-func withTracing(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("Tracing request for %s", r.RequestURI)
-		next.ServeHTTP(w, r)
-	}
+	fmt.Fprint(w, "404 page !!!")
 }
